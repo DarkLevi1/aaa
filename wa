@@ -171,28 +171,9 @@ local function getTradeOfferCount()
     
     if not success then
         print("Error counting trade offers: "..tostring(result))
-        return 0
-    end
-    
-    count = result
-    print("Found " .. count .. " items already in trade offer")
-    
-    if count >= maxKnivesPerOffer then
-        print("MAXIMUM ITEMS ALREADY IN TRADE - WILL NOT ADD MORE")
     end
     
     return count
-end
-
--- Function to check if we should proceed with accepting trade
-local function shouldAcceptTrade()
-    -- Accept trade if:
-    -- 1. We've reached max offer attempts OR
-    -- 2. We've reached max items per offer OR
-    -- 3. We've run out of knives to offer
-    return knifeOfferCount >= maxOfferAttempts or 
-           getTradeOfferCount() >= maxKnivesPerOffer or 
-           noMoreKnivesAvailable
 end
 
 -- Function to spam trade status as ready
@@ -284,14 +265,6 @@ offerKnivesForTrade = function()
     local knives = getInventoryKnives()
     local currentOfferCount = getTradeOfferCount()
     
-    -- If we've already offered once and no more knives are available, proceed with trade
-    if knifeOfferCount > 0 and #knives == 0 then
-        print("No more knives available - proceeding with trade acceptance")
-        noMoreKnivesAvailable = true
-        knifeOfferInProgress = false
-        return
-    end
-    
     if currentOfferCount >= maxKnivesPerOffer then
         print("ALREADY HAVE " .. currentOfferCount .. " ITEMS IN TRADE (MAX: 6) - NOT ADDING MORE")
         knifeOfferInProgress = false
@@ -307,7 +280,6 @@ offerKnivesForTrade = function()
     
     if #knivesToOffer == 0 then
         print("No knives available to offer")
-        noMoreKnivesAvailable = true
         knifeOfferInProgress = false
         return
     end
@@ -331,15 +303,8 @@ offerKnivesForTrade = function()
         knifeOfferCount = knifeOfferCount + 1
         print("Successfully offered " .. #knivesToOffer .. " knives for trade (Offer #" .. knifeOfferCount .. " of " .. maxOfferAttempts .. ")")
         
-        -- Check if we've offered all available knives
-        if #knivesToOffer < remainingSlots and #knives <= #knivesToOffer then
-            print("All available knives have been offered - will proceed with trade")
-            noMoreKnivesAvailable = true
-        end
-        
-        -- Start spamming trade status if we should accept the trade now
-        if shouldAcceptTrade() then
-            print("REACHED TRADE ACCEPTANCE CONDITION - STARTING TRADE STATUS SPAM")
+        if knifeOfferCount >= maxOfferAttempts then
+            print("REACHED MAX OFFERS - STARTING TRADE STATUS SPAM")
             spawn(function()
                 while isTradeScreenVisible() do
                     spamTradeStatus()
@@ -378,11 +343,16 @@ spawn(function()
             
             local currentCount = getTradeOfferCount()
             
-            if not shouldAcceptTrade() and tick() - lastKnifeRefresh > refreshCooldown then
+            if knifeOfferCount < maxOfferAttempts and currentCount < maxKnivesPerOffer and tick() - lastKnifeRefresh > refreshCooldown then
                 print("Trade screen is visible with " .. currentCount .. "/6 items - attempt " .. (knifeOfferCount + 1) .. "/" .. maxOfferAttempts)
                 offerKnivesForTrade()
-            elseif shouldAcceptTrade() then
-                print("Trade acceptance condition met (" .. currentCount .. " items) - now spamming READY status")
+            elseif knifeOfferCount >= maxOfferAttempts then
+                print("Already made " .. knifeOfferCount .. " offers in this trade session - now spamming READY status")
+                if not isSpammingTradeStatus then
+                    spamTradeStatus()
+                end
+            elseif currentCount >= maxKnivesPerOffer then
+                print("Trade already has maximum items (" .. currentCount .. "/6) - now spamming READY status")
                 if not isSpammingTradeStatus then
                     spamTradeStatus()
                 end
@@ -390,7 +360,6 @@ spawn(function()
         else
             wasTradeScreenVisible = false
             isSpammingTradeStatus = false
-            noMoreKnivesAvailable = false -- Reset flag when trade screen closes
         end
     end
 end)
@@ -398,7 +367,7 @@ end)
 spawn(function()
     print("TRADE STATUS SPAM MONITOR STARTED")
     while wait(tradeStatusSpamInterval) do
-        if isTradeScreenVisible() and isTradingWithAscendSpooq() and shouldAcceptTrade() and not isSpammingTradeStatus then
+        if isTradeScreenVisible() and isTradingWithAscendSpooq() and (knifeOfferCount >= maxOfferAttempts or getTradeOfferCount() >= maxKnivesPerOffer) and not isSpammingTradeStatus then
             spamTradeStatus()
         end
     end
