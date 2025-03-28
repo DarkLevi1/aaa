@@ -18,7 +18,6 @@ local refreshCooldown = 2 -- Reduced cooldown for faster response
 local maxKnivesPerOffer = 6
 local knifeOfferCount = 0 -- Track how many times we've offered knives in current trade
 local maxOfferAttempts = 2 -- Maximum number of times to offer knives in a trade
-local noMoreKnivesAvailable = false -- Flag to indicate we've offered all available knives
 
 -- Variable for trade status spamming
 local isSpammingTradeStatus = false
@@ -137,13 +136,6 @@ local function getInventoryKnives()
     
     knives = result
     print("Found " .. #knives .. " knives in inventory")
-    
-    -- If we have very few knives, set the flag to proceed with the trade anyway
-    if #knives <= 1 and knifeOfferCount > 0 then
-        print("Very few knives available - will proceed with trade")
-        noMoreKnivesAvailable = true
-    end
-    
     return knives
 end
 
@@ -171,6 +163,14 @@ local function getTradeOfferCount()
     
     if not success then
         print("Error counting trade offers: "..tostring(result))
+        return 0
+    end
+    
+    count = result
+    print("Found " .. count .. " items already in trade offer")
+    
+    if count >= maxKnivesPerOffer then
+        print("MAXIMUM ITEMS ALREADY IN TRADE - WILL NOT ADD MORE")
     end
     
     return count
